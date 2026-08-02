@@ -1,4 +1,5 @@
-/data
-/data_pipeline_venv
+/data/raw/*
+/data/processed/2025/dwd_trips.parquet
+/data_pipeline_venv/*
 .ds_store
 .vscode

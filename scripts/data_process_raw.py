@@ -1,23 +1,27 @@
 from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
+import gc
 
 # Run this script while within this project at the root folder
 ROOT_PATH = Path.cwd().resolve()
 DATA_FOLDER = 'data'
 PROCESSED_FOLDER = 'processed'
 RAW_FOLDER = 'raw'
+TRIPS_PARQUET = 'dwd_trips.parquet'
+VENDOR_PARQUET = 'dim_vendors.parquet'
+LOCATION_PARQUET = 'dim_location.parquet'
 
 def process_yearly_data(year: int):
     processed_folder_path = ROOT_PATH / DATA_FOLDER / PROCESSED_FOLDER / str(year)
     if processed_folder_path.exists():
-        answer = input(f"Delete all files under {processed_folder_path}? (y/n)").strip().lower()
+        answer = input(f"Delete all files under {processed_folder_path}? (y/n): ").strip().lower()
         if answer == 'y':
             for file in processed_folder_path.iterdir():
                 file.unlink()
             print(f"All files under {processed_folder_path} are deleted. Proceeding with data processing.")
         else:
-            print("Cancelled. Data processing stopped. Please ensure tot run this file at the root folder.")
+            print("Cancelled. Data processing stopped. Please ensure to run this file at the root folder.")
             return
     else:
         processed_folder_path.mkdir(parents=True, exist_ok=True)
@@ -44,13 +48,39 @@ def process_yearly_data(year: int):
         _data["dropoff_hour"] = _data["tpep_dropoff_datetime"].dt.hour
         _data = _data.drop(columns = (['tpep_pickup_datetime','tpep_pickup_datetime','tpep_dropoff_datetime','tpep_dropoff_datetime',
             'fare_amount','extra','mta_tax','tip_amount','tolls_amount','improvement_surcharge','total_amount','congestion_surcharge','Airport_fee','cbd_congestion_fee']))
-
-        path = Path(ROOT_PATH / DATA_FOLDER / PROCESSED_FOLDER / str(year) / 'processed_events.parquet')
+        _data.sort_values(by=['pickup_date', 'pickup_hour'], inplace=True)
+        path = Path(ROOT_PATH / DATA_FOLDER / PROCESSED_FOLDER / str(year) / TRIPS_PARQUET)
         if path.exists():
             existing = pd.read_parquet(path)
             combined = pd.concat([existing, _data], ignore_index=True)
         else:
             combined = _data
         combined.to_parquet(path, index=False)
+
+        path = Path(ROOT_PATH / DATA_FOLDER / PROCESSED_FOLDER / str(year) / VENDOR_PARQUET)
+        _vendors = _data[['pickup_date', 'VendorID']].drop_duplicates()
+        _vendors.rename(columns={'pickup_date':'date'}, inplace=True)
+        _vendors.sort_values(by=['date','VendorID'], inplace=True)
+        if path.exists():
+            existing = pd.read_parquet(path)
+            combined = pd.concat([existing, _vendors], ignore_index=True)
+        else:
+            combined = _vendors
+        combined.to_parquet(path, index=False)
+
+        path = Path(ROOT_PATH / DATA_FOLDER / PROCESSED_FOLDER / str(year) / LOCATION_PARQUET)
+        _pickup_locations = _data[['pickup_date', 'PULocationID']].drop_duplicates().rename(columns={'pickup_date':'date', 'PULocationID': 'LocationID'})
+        _dropoff_locations = _data[['dropoff_date', 'DOLocationID']].drop_duplicates().rename(columns={'dropoff_date':'date', 'DOLocationID': 'LocationID'})
+        _locations = pd.concat([_pickup_locations, _dropoff_locations], ignore_index=True).drop_duplicates()
+        _locations.sort_values(by = ['date', 'LocationID'], inplace=True)
+        if path.exists():
+            existing = pd.read_parquet(path)
+            combined = pd.concat([existing, _locations], ignore_index=True)
+        else:
+            combined = _vendors
+        combined.to_parquet(path, index=False)
+        del combined
+        del _data
+        gc.collect()
         print(f"End processing {file}")
 process_yearly_data(2025)
